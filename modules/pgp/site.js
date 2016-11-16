@@ -97,6 +97,29 @@ var Hm_Pgp = {
         }
         return true;
     },
+
+    lookup_public_key: function(query, server) {
+		var hkp = new openpgp.HKP(server);
+		var options = {query: query};
+        var key;
+        $('.hkp_search_results').html('');
+		hkp.lookup(options).then(function(keys) {
+            elog(keys);
+            if (keys) {
+    		    var pubkey = openpgp.key.readArmored(keys);
+                if (pubkey) {
+                    for (var index in pubkey.keys) {
+                        key = pubkey.keys[index];
+                        $('.hkp_search_results').append(key.getUserIds().join(',')+'<br />');
+                        //details.push({'users': key.getUserIds(), 'key': key.armor()});
+                    }
+                }
+            }
+            else {
+                $('.hkp_search_results').text('No keys found');
+            }
+		});
+    }
 }
 
 $(function() {
@@ -106,5 +129,10 @@ $(function() {
         $('.compose_form').submit(function() { return Hm_Pgp.process_settings(); });
     }
     else if (hm_page_name() == 'message') {
+    }
+    else if (hm_page_name() == 'pgp') {
+        $('.priv_title').click(function() { $('.priv_keys').toggle(); });
+        $('.public_title').click(function() { $('.public_keys').toggle(); });
+        $('#hkp_search').click(function() { Hm_Pgp.lookup_public_key($('#hkp_email').val(), $('#hkp_server').val()); });
     }
 });
