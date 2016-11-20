@@ -41,6 +41,22 @@ class Hm_Handler_process_sent_source_max_setting extends Hm_Handler_Module {
 }
 
 /**
+ * Process "text only" setting for the message view page in the settings page
+ * @subpackage imap/handler
+ */
+class Hm_Handler_process_text_only_setting extends Hm_Handler_Module {
+    /**
+     * valid values are true or false
+     */
+    public function process() {
+        function text_only_callback($val) {
+            return $val;
+        }
+        process_site_setting('text_only', $this, 'text_only_callback', false, true);
+    }
+}
+
+/**
  * Process "since" setting for the Sent page in the settings page
  * @subpackage imap/handler
  */
@@ -1137,7 +1153,15 @@ class Hm_Handler_imap_message_content extends Hm_Handler_Module {
                         $msg_text = $imap->get_message_content($form['imap_msg_uid'], $part, $max, $msg_struct_current);
                     }
                     else {
-                        list($part, $msg_text) = $imap->get_first_message_part($form['imap_msg_uid'], 'text', false, $msg_struct);
+                        if (!$this->user_config->get('text_only_setting', false)) {
+                            list($part, $msg_text) = $imap->get_first_message_part($form['imap_msg_uid'], 'text', 'html', $msg_struct);
+                            if (!$part) {
+                                list($part, $msg_text) = $imap->get_first_message_part($form['imap_msg_uid'], 'text', false, $msg_struct);
+                            }
+                        }
+                        else {
+                            list($part, $msg_text) = $imap->get_first_message_part($form['imap_msg_uid'], 'text', false, $msg_struct);
+                        }
                         $struct = $imap->search_bodystructure( $msg_struct, array('imap_part_number' => $part));
                         $msg_struct_current = array_shift($struct);
                         if (!trim($msg_text)) {
@@ -1803,6 +1827,23 @@ class Hm_Output_sent_since_setting extends Hm_Output_Module {
 }
 
 /**
+ * Option to limit mail fromat to text only when possible (not defaulting to HTML)
+ * @subpackage imap/output
+ */
+class Hm_Output_text_only_setting extends Hm_Output_Module {
+    protected function output() {
+        $checked = '';
+        $settings = $this->get('user_settings', array());
+        if (array_key_exists('text_only', $settings) && $settings['text_only']) {
+            $checked = ' checked="checked"';
+        }
+        return '<tr class="general_setting"><td><label for="text_only">'.
+            $this->trans('Prefer text over HTML when reading messages').'</label></td>'.
+            '<td><input type="checkbox" '.$checked.' id="text_only" name="text_only" value="1" /></td></tr>';
+    }
+}
+
+/**
  * Option for the maximum number of messages per source for the All E-mail  page
  * @subpackage imap/output
  */
@@ -2055,6 +2096,9 @@ function process_imap_message_ids($ids) {
  * @return string
  */
 function format_msg_part_row($id, $vals, $output_mod, $level, $part, $dl_args) {
+    /*if (filter_message_part($vals)) {
+        return '';
+    }*/
     $allowed = array(
         'textplain',
         'texthtml',
@@ -2181,6 +2225,24 @@ function format_msg_part_section($struct, $output_mod, $part, $dl_link, $level=0
         }
     }
     return $res;
+}
+
+/**
+ * Filter out message parts that are not attachments
+ * @param array message structure
+ * @return bool
+ */
+function filter_message_part($vals) {
+    if (array_key_exists('disposition', $vals) && is_array($vals['disposition']) && array_key_exists('inline', $vals['disposition'])) {
+        return true;
+    }
+    if (array_key_exists('file_attributes', $vals) && is_array($vals['file_attributes']) && array_key_exists('inline', $vals['file_attributes'])) {
+        return true;
+    }
+    if (array_key_exists('type', $vals) && $vals['type'] == 'multipart') {
+        return true;
+    }
+    return false;
 }
 
 /**
@@ -2339,7 +2401,7 @@ function imap_move_same_server($ids, $action, $session, $dest_path, $config) {
     $moved = array();
     $keys = array_keys($ids);
     $server_id = array_pop($keys);
-    $cache = Hm_IMAP_List::get_cache($session, $server_id);
+    $cache = Hm_IMAP_List::get_cache($session, $config, $server_id);
     $imap = Hm_IMAP_List::connect($server_id, $cache);
     foreach ($ids[$server_id] as $folder => $msgs) {
         if ($imap && $imap->select_mailbox(hex2bin($folder))) {
